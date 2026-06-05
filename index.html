@@ -60,6 +60,14 @@
     background: linear-gradient(90deg, #ff3b3b, #ff8a3b);
     transition: width 0.12s linear;
   }
+  #dock {
+    position: fixed; bottom: 54px; left: 50%; transform: translateX(-50%);
+    z-index: 6; display: none; pointer-events: none;
+    font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; font-weight: 700;
+    font-size: clamp(13px, 1.6vw, 18px); letter-spacing: 0.18em; color: #8effc0;
+    text-shadow: 0 0 14px rgba(120,255,180,0.7); animation: pulse 1.2s ease-in-out infinite;
+  }
+  #dock.on { display: block; }
 
   /* ---- Screens ---- */
   .screen {
@@ -120,6 +128,8 @@
     <div id="bossTrack"><div id="bossFill"></div></div>
   </div>
 
+  <div id="dock">⛽ DOCKED — RESUPPLYING…</div>
+
   <div id="startScreen" class="screen">
     <div class="brand">SLOPCLAUDE.COM</div>
     <h1>Fleet Defender</h1>
@@ -130,6 +140,7 @@
       <div><b>AIM</b> Move the mouse</div>
       <div><b>FIRE</b> Click &nbsp;/&nbsp; Space</div>
       <div><b>BOMB</b> Press B — clears the whole screen 💣</div>
+      <div><b>LAND</b> Fly to a ⛽ mountain BASE and set down to resupply</div>
       <div><b>GRAB</b> Power-ups: 🛡 Shield &nbsp;✦ Triple &nbsp;⚡ Rapid &nbsp;✚ Repair</div>
       <div><b>UPGRADE</b> Big ships drop weapons: Twin · Spread · Plasma</div>
       <div><b>WIN</b> Destroy the Dreadnought boss at 300 pts 🏆</div>
@@ -168,6 +179,7 @@
   const heartsEl = document.getElementById('hearts');
   const bossBarEl = document.getElementById('bossBar');
   const bossFillEl = document.getElementById('bossFill');
+  const dockEl = document.getElementById('dock');
   const startScreen = document.getElementById('startScreen');
   const gameOverScreen = document.getElementById('gameOver');
   const winScreen = document.getElementById('winScreen');
@@ -195,11 +207,17 @@
   const keys = {};
   const mouse = { x: 0, y: 0, down: false };
 
+  // --- scrolling world ---
+  let scrollX = 0;    // camera offset into the world
+  let WORLD = 0;      // total world width
+  let bases = [];     // landing/resupply pads carved into the ridge
+
   // --- star layers (parallax: far = small/slow, near = big/fast) ---
+  // par = how strongly each layer scrolls with the camera (far stars barely move)
   const LAYERS = [
-    { count: 220, speed: 2.5,  size: [0.4, 0.9], drift: 0.015 },
-    { count: 120, speed: 6.0,  size: [0.7, 1.5], drift: 0.04  },
-    { count: 60,  speed: 12.0, size: [1.0, 2.2], drift: 0.08  },
+    { count: 220, speed: 2.5,  size: [0.4, 0.9], drift: 0.015, par: 0.08 },
+    { count: 120, speed: 6.0,  size: [0.7, 1.5], drift: 0.04,  par: 0.22 },
+    { count: 60,  speed: 12.0, size: [1.0, 2.2], drift: 0.08,  par: 0.45 },
   ];
   let stars = [];
   let shootingStars = [];
@@ -279,26 +297,39 @@
           spd: L.speed * DPR,
           drift: L.drift * DPR,
           driftX: L.drift * DPR * 0.85,   // sideways parallax (diagonal scroll)
+          par: L.par,                     // camera-scroll parallax factor
           hue: Math.random() < 0.15 ? rand(200, 230) : rand(40, 60), // mostly warm, some blue
         });
       }
     }
   }
 
-  // procedural mountain ridge (fixed per resize)
+  // procedural mountain ridge spanning the whole world, with flat landing bases
   function buildRidge() {
     ridge = [];
+    bases = [
+      { x: WORLD * 0.16 }, { x: WORLD * 0.42 }, { x: WORLD * 0.68 }, { x: WORLD * 0.93 },
+    ];
+    for (const b of bases) { b.y = horizon - rand(40, 95) * DPR; b.w = rand(130, 190) * DPR; }
     const step = Math.max(8, W / 110);
     let y = horizon - rand(30, 70) * DPR;
-    for (let x = -step; x <= W + step; x += step) {
+    for (let x = -step; x <= WORLD + step; x += step) {
       y += rand(-1, 1) * 32 * DPR;
-      // ridge sits ABOVE the horizon: peaks rise into the sky, base at waterline
       const minY = horizon - 140 * DPR;   // tallest peaks
       const maxY = horizon - 6 * DPR;      // dips down near the waterline
       if (y < minY) y = minY + rand(0, 30) * DPR;
       if (y > maxY) y = maxY - rand(0, 28) * DPR;
-      ridge.push({ x, y });
+      // flatten the ridge into a mesa wherever a base sits
+      let by = null;
+      for (const b of bases) { if (Math.abs(x - b.x) <= b.w / 2) by = b.y; }
+      ridge.push({ x, y: by != null ? by : y });
+      if (by != null) y = by;             // keep the line continuous off the mesa edge
     }
+  }
+
+  function baseAt(worldX) {
+    for (const b of bases) { if (Math.abs(worldX - b.x) <= b.w / 2) return b; }
+    return null;
   }
 
   function resize() {
@@ -308,6 +339,8 @@
     canvas.style.width = innerWidth + 'px';
     canvas.style.height = innerHeight + 'px';
     horizon = H * 0.60;
+    WORLD = W * 4;     // four screens wide
+    scrollX = Math.max(0, Math.min(WORLD - W, scrollX));
     buildStars();
     buildRidge();
     if (player) { player.x = Math.min(player.x, W); player.y = Math.min(player.y, horizon - 30 * DPR); }
@@ -481,7 +514,7 @@
         sh.y = sh.baseY + Math.sin(t * sh.bobSpd + sh.ph) * sh.bob;
       }
       // crash into the mountain ridge → fireball (~30% are big booms)
-      if (sh.x > 0 && sh.x < W && sh.y >= ridgeY(sh.x)) {
+      if (sh.x > 0 && sh.x < W && sh.y >= ridgeY(sh.x + scrollX)) {
         spawnExplosion(sh.x, sh.y, Math.random() < 0.3);
         ships.splice(i, 1); continue;
       }
@@ -641,15 +674,17 @@
       s.x += s.driftX * dt;
       if (s.y > horizon) { s.y = 0; s.x = Math.random() * W; }
       if (s.x > W) s.x -= W; else if (s.x < 0) s.x += W;
+      // camera parallax: shift by the scroll amount, wrapped across the screen
+      const sx = ((s.x - scrollX * s.par) % W + W) % W;
       const tw = s.base * (0.55 + 0.45 * Math.sin(t * 0.001 * s.tw + s.ph));
       ctx.beginPath();
       ctx.fillStyle = `hsla(${s.hue}, 80%, 88%, ${tw})`;
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.arc(sx, s.y, s.r, 0, Math.PI * 2);
       ctx.fill();
       if (s.r > 1.4 * DPR) { // glow on brighter stars
         ctx.beginPath();
         ctx.fillStyle = `hsla(${s.hue}, 80%, 80%, ${tw * 0.18})`;
-        ctx.arc(s.x, s.y, s.r * 3, 0, Math.PI * 2);
+        ctx.arc(sx, s.y, s.r * 3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -680,12 +715,48 @@
 
   function drawMountains() {
     ctx.beginPath();
-    ctx.moveTo(0, horizon);
-    for (const p of ridge) ctx.lineTo(p.x, p.y);
-    ctx.lineTo(W, horizon);
+    ctx.moveTo(ridge[0].x - scrollX, horizon);
+    for (const p of ridge) ctx.lineTo(p.x - scrollX, p.y);
+    ctx.lineTo(ridge[ridge.length - 1].x - scrollX, horizon);
     ctx.closePath();
     ctx.fillStyle = '#0a0a10';
     ctx.fill();
+  }
+
+  function drawBases(t) {
+    const on = Math.floor(t / 350) % 2 === 0;
+    for (const b of bases) {
+      const sx = b.x - scrollX;
+      if (sx < -300 || sx > W + 300) continue;
+      const half = b.w / 2;
+      // landing deck
+      ctx.fillStyle = '#141a26';
+      ctx.fillRect(sx - half, b.y - 4 * DPR, b.w, 7 * DPR);
+      ctx.fillStyle = '#2c3848';
+      ctx.fillRect(sx - half, b.y - 4 * DPR, b.w, 2 * DPR);
+      // blinking landing lights
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let lx = sx - half + 8 * DPR; lx <= sx + half - 8 * DPR; lx += 22 * DPR) {
+        ctx.fillStyle = on ? 'rgba(120,255,180,0.9)' : 'rgba(60,180,120,0.4)';
+        ctx.beginPath(); ctx.arc(lx, b.y - 5 * DPR, 1.6 * DPR, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+      // beacon tower
+      ctx.strokeStyle = '#3a4150'; ctx.lineWidth = 2 * DPR;
+      ctx.beginPath(); ctx.moveTo(sx - half + 7 * DPR, b.y - 4 * DPR); ctx.lineTo(sx - half + 7 * DPR, b.y - 22 * DPR); ctx.stroke();
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `rgba(120,200,255,${on ? 0.95 : 0.4})`;
+      ctx.beginPath(); ctx.arc(sx - half + 7 * DPR, b.y - 23 * DPR, 2.4 * DPR, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // label
+      ctx.fillStyle = 'rgba(150,200,255,0.5)';
+      ctx.font = `${9 * DPR}px 'Trebuchet MS', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('⛽ BASE', sx, b.y - 28 * DPR);
+      ctx.textAlign = 'left';
+    }
   }
 
   function drawReflection(t) {
@@ -707,9 +778,10 @@
   // =====================  PLAYER  =====================
   function newPlayer() {
     return {
-      x: W * 0.5, y: horizon * 0.5,
+      x: W * 0.35, y: horizon * 0.45,
       vx: 0, vy: 0,
       angle: 0,
+      landed: false, resupplyT: 0,
       scale: 1.5 * DPR,
       hp: 3,
       invuln: 0,        // ms of invulnerability after a hit
@@ -766,18 +838,48 @@
 
     p.pulse += dt * 0.01;
 
-    // bounds: stay on screen, above the water/ridge
+    // --- horizontal: push the world when nearing the screen edges (Defender-style) ---
     const margin = 16 * DPR;
-    if (p.x < margin) { p.x = margin; p.vx = Math.abs(p.vx) * 0.4; }
-    if (p.x > W - margin) { p.x = W - margin; p.vx = -Math.abs(p.vx) * 0.4; }
+    const edge = W * 0.30;
+    if (p.x < edge) {
+      const used = Math.min(edge - p.x, scrollX);   // scroll left as far as the world allows
+      scrollX -= used; p.x += used;
+      if (p.x < margin) { p.x = margin; p.vx = Math.abs(p.vx) * 0.4; }
+    } else if (p.x > W - edge) {
+      const used = Math.min(p.x - (W - edge), (WORLD - W) - scrollX);
+      scrollX += used; p.x -= used;
+      if (p.x > W - margin) { p.x = W - margin; p.vx = -Math.abs(p.vx) * 0.4; }
+    }
     if (p.y < margin) { p.y = margin; p.vy = Math.abs(p.vy) * 0.4; }
 
-    // mountain / waterline danger
-    const floor = Math.min(ridgeY(p.x), horizon) - 4 * DPR;
-    if (p.y >= floor) {
-      hitPlayer('crash');
-      p.y = floor - 40 * DPR;       // bounce up
-      p.vy = -6 * DPR;
+    // --- land on a base (resupply) or crash into the ridge ---
+    const wx = p.x + scrollX;          // player position in world space
+    const base = baseAt(wx);
+    p.landed = false;
+    if (base && p.y >= base.y - 14 * DPR) {
+      p.landed = true;
+      p.y = base.y - 14 * DPR;         // rest on the pad
+      p.vy = Math.min(0, p.vy);        // cancel downward push, still allow lift-off
+      p.vx *= 0.6;
+      p.resupplyT += dt;               // resupply over time while docked
+      if (p.resupplyT >= 450) {
+        p.resupplyT = 0;
+        if (p.weapon === 'single') {   // the base arms you with a real gun first
+          p.weapon = 'spread'; updateBuffs(); Sound.weapon();
+        } else {
+          let did = false;
+          if (p.bombs < 5) { p.bombs++; did = true; }
+          if (p.hp < 3) { p.hp = Math.min(3, p.hp + 0.25); did = true; }
+          if (did) { updateHearts(); updateBuffs(); Sound.power(); }
+        }
+      }
+    } else {
+      const floor = Math.min(ridgeY(wx), horizon) - 4 * DPR;
+      if (p.y >= floor) {
+        hitPlayer('crash');
+        p.y = floor - 40 * DPR;        // bounce up
+        p.vy = -6 * DPR;
+      }
     }
 
     // timers
@@ -794,6 +896,19 @@
       const base = plasma ? 300 : 150;
       p.fireCd = p.rapid > 0 ? base * 0.5 : base;
     }
+  }
+
+  // when the camera pans, slide every world-anchored entity the opposite way so
+  // ships/bolts/pickups/debris stay fixed to the terrain (the boss stays screen-bound)
+  function shiftWorld(d) {
+    if (!d) return;
+    for (const a of ships) { a.x -= d; a.px -= d; }
+    for (const a of bolts) a.x -= d;
+    for (const a of enemyBolts) a.x -= d;
+    for (const a of powerups) a.x -= d;
+    for (const a of particles) a.x -= d;
+    for (const a of shocks) a.x -= d;
+    for (const a of warpTrail) a.x -= d;
   }
 
   const WEAPON_OFFS = { single: [0], twin: [-0.06, 0.06], spread: [-0.26, 0, 0.26], plasma: [0] };
@@ -906,7 +1021,7 @@
     for (let i = bolts.length - 1; i >= 0; i--) {
       const b = bolts[i];
       b.x += b.vx; b.y += b.vy;
-      if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > horizon) {
+      if (b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {   // only when fully off-screen
         bolts.splice(i, 1); continue;
       }
       const tx = b.x - b.vx * 1.1, ty = b.y - b.vy * 1.1;
@@ -952,7 +1067,7 @@
     for (let i = enemyBolts.length - 1; i >= 0; i--) {
       const b = enemyBolts[i];
       b.x += b.vx; b.y += b.vy;
-      if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y >= ridgeY(b.x)) {
+      if (b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {   // only when fully off-screen
         enemyBolts.splice(i, 1); continue;
       }
       const tx = b.x - b.vx * 1.1, ty = b.y - b.vy * 1.1;
@@ -1509,7 +1624,7 @@
     bolts = []; ships = []; particles = []; enemyBolts = []; powerups = [];
     boss = null; nextBossScore = 300; bossesBeaten = 0; nextHeavy = 14000;
     nextLifeScore = 500;
-    shocks = []; warpTrail = []; bombFlash = 0;
+    shocks = []; warpTrail = []; bombFlash = 0; scrollX = 0;
     bossBarEl.classList.remove('on');
     player = newPlayer();
     scoreValEl.textContent = '0';
@@ -1559,7 +1674,9 @@
 
     if (state === 'playing') {
       elapsed += dt;
+      const prevScroll = scrollX;
       updatePlayer(dt);
+      shiftWorld(scrollX - prevScroll);   // keep the world's contents anchored to the terrain
     }
 
     if (state === 'playing' && boss) updateBoss(dt);
@@ -1579,8 +1696,12 @@
     }
 
     drawMountains();
+    drawBases(now);
     drawParticles();
     drawReflection(now);
+
+    if (state === 'playing' && player.landed) dockEl.classList.add('on');
+    else dockEl.classList.remove('on');
 
     // bomb screen-flash sits on top of everything
     if (bombFlash > 0) {

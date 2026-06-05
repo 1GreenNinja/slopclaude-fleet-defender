@@ -23,6 +23,10 @@ what unlocks audio). Or play the hosted version via GitHub Pages once enabled.
 
 ## Features
 
+- **Scrolling world** (Defender-style): a four-screen-wide procedurally generated
+  landscape that scrolls with parallax as you fly to the edges.
+- **Landing bases:** flat mesas carved into the ridge with lit decks and beacons —
+  set down on one to **resupply** (refill bombs, repair hull, restock your gun).
 - **Parallax starfield** with twinkling layers, shooting stars, a nebula band, a
   procedural mountain ridge, and a rippling lake reflection.
 - **Weapons** that drop from heavy ships and persist until you're hit:
