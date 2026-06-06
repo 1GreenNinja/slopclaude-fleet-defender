@@ -4,7 +4,9 @@ A single-file HTML5 canvas arcade shooter. Fly a fighter over a starlit sunset s
 blast incoming ships, grab power-ups, and take down the glossy Star-Trek-style
 **Dreadnought** boss to win. No build step, no dependencies — just open `index.html`.
 
-![Fleet Defender](https://img.shields.io/badge/play-in%20browser-2fd3c6)
+[![Play in browser](https://img.shields.io/badge/play-in%20browser-2fd3c6)](https://1greenninja.github.io/slopclaude-fleet-defender/)
+
+![Fleet Defender screenshot](screenshot.png)
 
 ## Play
 
