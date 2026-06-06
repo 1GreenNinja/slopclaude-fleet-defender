@@ -68,6 +68,31 @@
     text-shadow: 0 0 14px rgba(120,255,180,0.7); animation: pulse 1.2s ease-in-out infinite;
   }
   #dock.on { display: block; }
+  #ctrl {
+    position: fixed; left: 14px; bottom: 12px; z-index: 6; display: none;
+    font-family: 'Segoe UI', sans-serif; font-size: 11px; letter-spacing: 0.12em;
+    color: rgba(244,241,234,0.55); pointer-events: none;
+  }
+  #ctrl.on { display: block; }
+  #ctrl b { color: var(--accent); }
+  #shop {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 7; display: none;
+    background: rgba(8,12,20,0.82); border: 1px solid rgba(47,211,198,0.4); border-radius: 14px;
+    padding: 12px 16px; backdrop-filter: blur(3px); box-shadow: 0 0 30px rgba(47,211,198,0.25);
+    font-family: 'Trebuchet MS','Segoe UI',sans-serif; text-align: center; max-width: 92vw; pointer-events: none;
+  }
+  #shop.on { display: block; }
+  #shop .shop-hd { color: #8effc0; letter-spacing: 0.18em; font-weight: 700; font-size: clamp(13px,1.6vw,17px); margin-bottom: 10px; }
+  #shop .shop-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  #shop .shop-item {
+    pointer-events: auto; cursor: pointer; background: rgba(47,211,198,0.12);
+    border: 1px solid rgba(47,211,198,0.5); color: #eaf6f3; border-radius: 9px; padding: 8px 12px;
+    font: inherit; font-size: 13px; letter-spacing: 0.04em; transition: background .12s; white-space: nowrap;
+  }
+  #shop .shop-item b { color: #ffd86b; margin-left: 8px; font-weight: 700; }
+  #shop .shop-item:hover { background: rgba(47,211,198,0.28); }
+  #shop .shop-item.broke { opacity: 0.4; cursor: not-allowed; }
+  #shop .shop-tip { margin-top: 9px; font-size: 11px; letter-spacing: 0.12em; color: rgba(244,241,234,0.5); }
 
   /* ---- Screens ---- */
   .screen {
@@ -118,7 +143,7 @@
   <div class="accent-bar"></div>
 
   <div id="hud">
-    <div id="score">SCORE <span id="scoreVal">0</span> <small id="best"></small></div>
+    <div id="score">SCORE <span id="scoreVal">0</span> <small>· 💰 <span id="creditsVal">0</span></small> <small id="best"></small></div>
     <div id="buffs"></div>
     <div id="hearts">❤❤❤</div>
   </div>
@@ -128,22 +153,37 @@
     <div id="bossTrack"><div id="bossFill"></div></div>
   </div>
 
-  <div id="dock">⛽ DOCKED — RESUPPLYING…</div>
+  <div id="dock">⛽ DOCKED</div>
+  <div id="ctrl"></div>
+
+  <div id="shop">
+    <div class="shop-hd">⛽ STARBASE &nbsp;·&nbsp; 💰 <span id="shopCredits">0</span></div>
+    <div class="shop-row">
+      <button class="shop-item" data-act="repair">Repair +1 ❤<b>20</b></button>
+      <button class="shop-item" data-act="bomb">Bomb +1 💣<b>30</b></button>
+      <button class="shop-item" data-act="shield">Shield 45s 🛡<b>40</b></button>
+      <button class="shop-item" data-act="rapid">Rapid 45s ⚡<b>40</b></button>
+      <button class="shop-item" data-act="triple">Triple 30s ✦<b>30</b></button>
+      <button class="shop-item" data-act="twin">Twin gun<b>50</b></button>
+      <button class="shop-item" data-act="spread">Spread gun<b>70</b></button>
+      <button class="shop-item" data-act="plasma">Plasma gun<b>120</b></button>
+    </div>
+    <div class="shop-tip">click to buy &nbsp;·&nbsp; thrust up to leave</div>
+  </div>
 
   <div id="startScreen" class="screen">
     <div class="brand">SLOPCLAUDE.COM</div>
     <h1>Fleet Defender</h1>
     <div class="sub">A fleet awakens</div>
     <div class="controls">
-      <div><b>STRAFE</b> W A S D &nbsp;(pairs great with mouse aim)</div>
-      <div><b>FLY</b> ← → bank &nbsp;·&nbsp; ↑ ↓ thrust / reverse</div>
+      <div><b>MOVE</b> WASD / Arrow Keys &nbsp;·&nbsp; <b>TAB</b> swaps Absolute ⇄ Relative</div>
       <div><b>AIM</b> Move the mouse</div>
-      <div><b>FIRE</b> Click &nbsp;/&nbsp; Space</div>
+      <div><b>FIRE</b> Space &nbsp;/&nbsp; Click</div>
       <div><b>BOMB</b> Press B — clears the whole screen 💣</div>
-      <div><b>LAND</b> Fly to a ⛽ mountain BASE and set down to resupply</div>
+      <div><b>DOCK</b> Land on a ⛽ BASE to open the shop — spend 💰 salvage from kills</div>
       <div><b>GRAB</b> Power-ups: 🛡 Shield &nbsp;✦ Triple &nbsp;⚡ Rapid &nbsp;✚ Repair</div>
       <div><b>UPGRADE</b> Big ships drop weapons: Twin · Spread · Plasma</div>
-      <div><b>WIN</b> Destroy the Dreadnought boss at 300 pts 🏆</div>
+      <div><b>WIN</b> Destroy the Dreadnought boss at 600 pts 🏆</div>
       <div><b>AVOID</b> Mountains & enemy fire — they shoot back 💥</div>
     </div>
     <div class="cta">Click to Launch</div>
@@ -174,12 +214,16 @@
   // ---- DOM ----
   const hudEl = document.getElementById('hud');
   const scoreValEl = document.getElementById('scoreVal');
+  const creditsValEl = document.getElementById('creditsVal');
   const bestEl = document.getElementById('best');
   const buffsEl = document.getElementById('buffs');
   const heartsEl = document.getElementById('hearts');
   const bossBarEl = document.getElementById('bossBar');
   const bossFillEl = document.getElementById('bossFill');
   const dockEl = document.getElementById('dock');
+  const ctrlEl = document.getElementById('ctrl');
+  const shopEl = document.getElementById('shop');
+  const shopCreditsEl = document.getElementById('shopCredits');
   const startScreen = document.getElementById('startScreen');
   const gameOverScreen = document.getElementById('gameOver');
   const winScreen = document.getElementById('winScreen');
@@ -198,12 +242,13 @@
   let nextPowerup = 8000;
   let nextHeavy = 14000;
   let boss = null;
-  let nextBossScore = 300;
+  let nextBossScore = 600;
   let bossesBeaten = 0;
   let nextLifeScore = 500;
   let shocks = [];
   let warpTrail = [];
   let bombFlash = 0;
+  let relativeControls = false;   // false = Absolute (screen) · true = Relative (flight). Tab toggles.
   const keys = {};
   const mouse = { x: 0, y: 0, down: false };
 
@@ -308,7 +353,8 @@
   function buildRidge() {
     ridge = [];
     bases = [
-      { x: WORLD * 0.16 }, { x: WORLD * 0.42 }, { x: WORLD * 0.68 }, { x: WORLD * 0.93 },
+      { x: WORLD * 0.10 }, { x: WORLD * 0.25 }, { x: WORLD * 0.40 },
+      { x: WORLD * 0.56 }, { x: WORLD * 0.72 }, { x: WORLD * 0.90 },
     ];
     for (const b of bases) { b.y = horizon - rand(40, 95) * DPR; b.w = rand(130, 190) * DPR; }
     const step = Math.max(8, W / 110);
@@ -339,7 +385,7 @@
     canvas.style.width = innerWidth + 'px';
     canvas.style.height = innerHeight + 'px';
     horizon = H * 0.60;
-    WORLD = W * 4;     // four screens wide
+    WORLD = W * 6;     // six screens wide (longer levels)
     scrollX = Math.max(0, Math.min(WORLD - W, scrollX));
     buildStars();
     buildRidge();
@@ -791,6 +837,7 @@
       reverse: false,
       weapon: 'single', // persistent weapon: single | twin | spread | plasma
       bombs: 1,         // screen-clear bombs in reserve (press B)
+      credits: 0,       // salvage spent at base shops
       triple: 0,        // ms remaining of triple-shot
       rapid: 0,         // ms remaining of rapid-fire
       shieldT: 0,       // ms remaining of shield
@@ -803,24 +850,29 @@
     const accel = 0.6 * DPR;
 
     // --- AIM ---
-    // ← / → bank the nose (flight steering). Moving the mouse snaps aim to the
-    // cursor. Turn keys win while held; otherwise the mouse aims; idle holds.
-    if (keys['arrowleft'] || keys['arrowright']) {
+    // Relative mode: ← / → bank the nose. Either mode: moving the mouse aims.
+    if (relativeControls && (keys['arrowleft'] || keys['arrowright'])) {
       p.angle += ((keys['arrowright'] ? 1 : 0) - (keys['arrowleft'] ? 1 : 0)) * 0.052 * step;
     } else if (mouse.active) {
       p.angle = Math.atan2(mouse.y - p.y, mouse.x - p.x);
     }
     mouse.active = false;
 
-    // --- THRUST (relative to where the ship is pointing) ---
-    // W forward · S reverse · A/D strafe left/right of the nose;
-    // ↑ / ↓ also thrust fore/aft along the nose.
-    const fwd = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0)
-              + (keys['arrowup'] ? 1 : 0) - (keys['arrowdown'] ? 1 : 0);
-    const strafe = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
-    const ca = Math.cos(p.angle), sa = Math.sin(p.angle);
-    let ix = ca * fwd - sa * strafe;
-    let iy = sa * fwd + ca * strafe;
+    // --- THRUST ---
+    let ix, iy;
+    if (relativeControls) {
+      // flight model: W/↑ forward · S/↓ reverse (along the nose) · A/D strafe
+      const fwd = (keys['w'] ? 1 : 0) - (keys['s'] ? 1 : 0)
+                + (keys['arrowup'] ? 1 : 0) - (keys['arrowdown'] ? 1 : 0);
+      const strafe = (keys['d'] ? 1 : 0) - (keys['a'] ? 1 : 0);
+      const ca = Math.cos(p.angle), sa = Math.sin(p.angle);
+      ix = ca * fwd - sa * strafe;
+      iy = sa * fwd + ca * strafe;
+    } else {
+      // absolute screen movement: W/↑ up · S/↓ down · A/← left · D/→ right
+      ix = (keys['d'] || keys['arrowright'] ? 1 : 0) - (keys['a'] || keys['arrowleft'] ? 1 : 0);
+      iy = (keys['s'] || keys['arrowdown'] ? 1 : 0) - (keys['w'] || keys['arrowup'] ? 1 : 0);
+    }
 
     const moving = (ix !== 0 || iy !== 0);
     p.thrust = moving;
@@ -857,22 +909,10 @@
     const base = baseAt(wx);
     p.landed = false;
     if (base && p.y >= base.y - 14 * DPR) {
-      p.landed = true;
+      p.landed = true;                 // docked — the base shop opens (buy with salvage)
       p.y = base.y - 14 * DPR;         // rest on the pad
       p.vy = Math.min(0, p.vy);        // cancel downward push, still allow lift-off
       p.vx *= 0.6;
-      p.resupplyT += dt;               // resupply over time while docked
-      if (p.resupplyT >= 450) {
-        p.resupplyT = 0;
-        if (p.weapon === 'single') {   // the base arms you with a real gun first
-          p.weapon = 'spread'; updateBuffs(); Sound.weapon();
-        } else {
-          let did = false;
-          if (p.bombs < 5) { p.bombs++; did = true; }
-          if (p.hp < 3) { p.hp = Math.min(3, p.hp + 0.25); did = true; }
-          if (did) { updateHearts(); updateBuffs(); Sound.power(); }
-        }
-      }
     } else {
       const floor = Math.min(ridgeY(wx), horizon) - 4 * DPR;
       if (p.y >= floor) {
@@ -1449,6 +1489,7 @@
     boss = null;
     bossBarEl.classList.remove('on');
     addScore(500);
+    addCredits(200);
     Sound.bossdead();
     spawnExplosion(bx, by, true);
     setTimeout(() => spawnExplosion(bx - 50 * DPR, by + 12 * DPR, false), 150);
@@ -1469,6 +1510,7 @@
     for (const sh of ships) {              // vaporize every ship on screen
       spawnFirework(sh.x, sh.y);
       addScore(sh.score || 10);
+      addCredits(sh.heavy ? 20 : 5);
     }
     ships = [];
     if (boss && !boss.dead) {              // and hammer the boss
@@ -1524,6 +1566,7 @@
             else if (Math.random() < 0.25) spawnPowerup(sh.x, sh.y);   // lucky drop
             ships.splice(j, 1);
             addScore(sh.score || 10);
+            addCredits(sh.heavy ? 20 : 5);
           }
           break;
         }
@@ -1556,13 +1599,19 @@
       const r = shipRadius(sh) + 13 * player.scale;
       if ((player.x - sh.x) ** 2 + (player.y - sh.y) ** 2 < r * r) {
         if (shielded) {
-          spawnFirework(sh.x, sh.y); ships.splice(j, 1); addScore(10);
+          spawnFirework(sh.x, sh.y); ships.splice(j, 1); addScore(10); addCredits(sh.heavy ? 20 : 5);
         } else if (player.invuln <= 0) {
           spawnExplosion(sh.x, sh.y, false); ships.splice(j, 1); hitPlayer('collision');
         }
         break;
       }
     }
+  }
+
+  function addCredits(n) {
+    if (!player) return;
+    player.credits += n;
+    creditsValEl.textContent = player.credits;
   }
 
   function addScore(n) {
@@ -1616,18 +1665,57 @@
     buffsEl.textContent = parts.join('   ');
   }
 
+  function updateCtrl() {
+    ctrlEl.innerHTML = 'CONTROLS: <b>' + (relativeControls ? 'RELATIVE' : 'ABSOLUTE') + '</b> — Tab to switch';
+  }
+
+  // ---- base shop ----
+  const SHOP = { repair: 20, bomb: 30, shield: 40, rapid: 40, triple: 30, twin: 50, spread: 70, plasma: 120 };
+  function buyShop(act) {
+    const p = player;
+    if (!p || state !== 'playing') return;
+    const cost = SHOP[act];
+    if (cost == null) return;
+    if (p.credits < cost) { Sound.eshoot(); return; }          // can't afford → low blip
+    switch (act) {
+      case 'repair': if (p.hp >= 6) return; p.hp = Math.min(6, p.hp + 1); updateHearts(); break;
+      case 'bomb':   if (p.bombs >= 5) return; p.bombs++; break;
+      case 'shield': p.shieldT += 45000; break;
+      case 'rapid':  p.rapid += 45000; break;
+      case 'triple': p.triple += 30000; break;
+      case 'twin': case 'spread': case 'plasma': if (p.weapon === act) return; p.weapon = act; break;
+      default: return;
+    }
+    p.credits -= cost;
+    creditsValEl.textContent = p.credits;
+    (act === 'twin' || act === 'spread' || act === 'plasma' ? Sound.weapon : Sound.power)();
+    updateBuffs();
+    refreshShop();
+  }
+  function refreshShop() {
+    if (!player) return;
+    shopCreditsEl.textContent = player.credits;
+    shopEl.querySelectorAll('.shop-item').forEach(b => {
+      b.classList.toggle('broke', player.credits < SHOP[b.dataset.act]);
+    });
+  }
+  shopEl.querySelectorAll('.shop-item').forEach(b => {
+    b.addEventListener('click', e => { e.stopPropagation(); buyShop(b.dataset.act); });
+  });
+
   // =====================  STATE TRANSITIONS  =====================
   function startGame() {
     Sound.init(); Sound.resume();
     state = 'playing';
     score = 0; elapsed = 0;
     bolts = []; ships = []; particles = []; enemyBolts = []; powerups = [];
-    boss = null; nextBossScore = 300; bossesBeaten = 0; nextHeavy = 14000;
+    boss = null; nextBossScore = 600; bossesBeaten = 0; nextHeavy = 14000;
     nextLifeScore = 500;
     shocks = []; warpTrail = []; bombFlash = 0; scrollX = 0;
     bossBarEl.classList.remove('on');
     player = newPlayer();
     scoreValEl.textContent = '0';
+    creditsValEl.textContent = '0';
     bestEl.textContent = best ? 'BEST ' + best : '';
     updateHearts();
     updateBuffs();
@@ -1636,6 +1724,8 @@
     gameOverScreen.classList.add('hidden');
     winScreen.classList.add('hidden');
     hudEl.classList.add('on');
+    ctrlEl.classList.add('on');
+    updateCtrl();
   }
 
   function winGame() {
@@ -1643,6 +1733,7 @@
     boss = null;
     bossBarEl.classList.remove('on');
     hudEl.classList.remove('on');
+    ctrlEl.classList.remove('on');
     if (score > best) { best = score; localStorage.setItem('slop_best', best); }
     winValEl.textContent = score;
     winScreen.classList.remove('hidden');
@@ -1655,6 +1746,7 @@
     bossBarEl.classList.remove('on');
     Sound.gameover();
     hudEl.classList.remove('on');
+    ctrlEl.classList.remove('on');
     if (score > best) { best = score; localStorage.setItem('slop_best', best); }
     finalValEl.textContent = score;
     goMsgEl.textContent = cause === 'crash'
@@ -1700,8 +1792,11 @@
     drawParticles();
     drawReflection(now);
 
-    if (state === 'playing' && player.landed) dockEl.classList.add('on');
-    else dockEl.classList.remove('on');
+    if (state === 'playing' && player.landed) {
+      dockEl.classList.add('on'); shopEl.classList.add('on'); refreshShop();
+    } else {
+      dockEl.classList.remove('on'); shopEl.classList.remove('on');
+    }
 
     // bomb screen-flash sits on top of everything
     if (bombFlash > 0) {
@@ -1743,13 +1838,15 @@
   addEventListener('resize', resize);
   addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
+    if (k === 'tab') { e.preventDefault(); relativeControls = !relativeControls; updateCtrl(); return; }
     if (k === 'b' && !keys['b'] && state === 'playing') detonateBomb();   // fire once per press
     keys[k] = true;
-    if (e.key === ' ') e.preventDefault();
+    if (e.key === ' ' || k.startsWith('arrow')) e.preventDefault();       // don't scroll the page
   });
   addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
   addEventListener('mousemove', e => { mouse.x = e.clientX * DPR; mouse.y = e.clientY * DPR; mouse.active = true; });
   addEventListener('mousedown', e => {
+    if (e.target && shopEl.contains(e.target)) return;   // clicking the shop shouldn't fire/restart
     if (e.button === 0) {
       mouse.down = true;
       if (state === 'start' || state === 'over' || state === 'won') startGame();
