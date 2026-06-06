@@ -26,6 +26,7 @@
     font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
   }
   #hud.on { display: flex; }
+  #hud.cine { opacity: 0; transition: opacity 0.2s; }   /* hidden during the docking cutscene */
   #score {
     font-size: clamp(16px, 2vw, 24px); font-weight: 700; letter-spacing: 0.12em;
     color: #fff; text-shadow: 0 0 14px rgba(47,211,198,0.6), 0 2px 6px rgba(0,0,0,0.8);
@@ -74,6 +75,7 @@
     color: rgba(244,241,234,0.55); pointer-events: none;
   }
   #ctrl.on { display: block; }
+  #ctrl.cine { opacity: 0; }
   #ctrl b { color: var(--accent); }
   #shop {
     position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 7; display: none;
@@ -92,6 +94,9 @@
   #shop .shop-item b { color: #ffd86b; margin-left: 8px; font-weight: 700; }
   #shop .shop-item:hover { background: rgba(47,211,198,0.28); }
   #shop .shop-item.broke { opacity: 0.4; cursor: not-allowed; }
+  #shop .shop-item.owned { border-color: #8effc0; color: #8effc0; opacity: 0.7; cursor: default; }
+  #shop .shop-ships { margin-top: 8px; }
+  #shop .shop-ships .shop-item { background: rgba(255,216,107,0.12); border-color: rgba(255,216,107,0.5); }
   #shop .shop-tip { margin-top: 9px; font-size: 11px; letter-spacing: 0.12em; color: rgba(244,241,234,0.5); }
 
   /* ---- Screens ---- */
@@ -168,6 +173,10 @@
       <button class="shop-item" data-act="spread">Spread gun<b>70</b></button>
       <button class="shop-item" data-act="plasma">Plasma gun<b>120</b></button>
     </div>
+    <div class="shop-row shop-ships">
+      <button class="shop-item" data-act="ship:vanguard">🛩 Vanguard · 6❤<b>180</b></button>
+      <button class="shop-item" data-act="ship:juggernaut">🚀 Juggernaut · 10❤<b>420</b></button>
+    </div>
     <div class="shop-tip">click to buy &nbsp;·&nbsp; thrust up to leave</div>
   </div>
 
@@ -242,12 +251,14 @@
   let nextPowerup = 8000;
   let nextHeavy = 14000;
   let boss = null;
-  let nextBossScore = 600;
+  let nextBossScore = 1200;
   let bossesBeaten = 0;
   let nextLifeScore = 500;
   let shocks = [];
   let warpTrail = [];
   let bombFlash = 0;
+  let docking = null;             // landing cutscene state {t, dur}
+  let wasLanded = false;
   let relativeControls = false;   // false = Absolute (screen) · true = Relative (flight). Tab toggles.
   const keys = {};
   const mouse = { x: 0, y: 0, down: false };
@@ -352,11 +363,12 @@
   // procedural mountain ridge spanning the whole world, with flat landing bases
   function buildRidge() {
     ridge = [];
-    bases = [
-      { x: WORLD * 0.10 }, { x: WORLD * 0.25 }, { x: WORLD * 0.40 },
-      { x: WORLD * 0.56 }, { x: WORLD * 0.72 }, { x: WORLD * 0.90 },
-    ];
-    for (const b of bases) { b.y = horizon - rand(40, 95) * DPR; b.w = rand(130, 190) * DPR; }
+    bases = [];
+    const BASE_N = 14;                       // bases scattered across the long world
+    for (let i = 0; i < BASE_N; i++) {
+      bases.push({ x: WORLD * ((i + 0.5) / BASE_N) * rand(0.92, 1.05),
+                   y: horizon - rand(40, 95) * DPR, w: rand(130, 190) * DPR });
+    }
     const step = Math.max(8, W / 110);
     let y = horizon - rand(30, 70) * DPR;
     for (let x = -step; x <= WORLD + step; x += step) {
@@ -385,7 +397,7 @@
     canvas.style.width = innerWidth + 'px';
     canvas.style.height = innerHeight + 'px';
     horizon = H * 0.60;
-    WORLD = W * 6;     // six screens wide (longer levels)
+    WORLD = W * 18;    // eighteen screens wide (long levels)
     scrollX = Math.max(0, Math.min(WORLD - W, scrollX));
     buildStars();
     buildRidge();
@@ -828,8 +840,10 @@
       vx: 0, vy: 0,
       angle: 0,
       landed: false, resupplyT: 0,
+      shipClass: 'interceptor',
       scale: 1.5 * DPR,
-      hp: 3,
+      hull: '#e8f6f3',
+      hp: 3, maxHp: 3,
       invuln: 0,        // ms of invulnerability after a hit
       fireCd: 0,        // ms until next shot allowed
       pulse: 0,
@@ -848,6 +862,16 @@
     const p = player;
     const step = dt / 16.67;                 // ~1 per 60fps frame
     const accel = 0.6 * DPR;
+
+    // frozen on the pad while the docking cutscene plays
+    if (docking) {
+      p.vx = 0; p.vy = 0;
+      p.invuln = Math.max(p.invuln - dt, 200);
+      if (p.shieldT > 0) p.shieldT -= dt;
+      if (p.rapid > 0) p.rapid -= dt;
+      if (p.triple > 0) p.triple -= dt;
+      return;
+    }
 
     // --- AIM ---
     // Relative mode: ← / → bank the nose. Either mode: moving the mouse aims.
@@ -1020,7 +1044,7 @@
     ctx.lineTo(-3 * s, 0);
     ctx.lineTo(-7 * s, 8 * s);
     ctx.closePath();
-    ctx.fillStyle = '#e8f6f3';
+    ctx.fillStyle = p.hull || '#e8f6f3';
     ctx.fill();
     ctx.lineWidth = 1.4 * s;
     ctx.strokeStyle = `hsla(${A},90%,60%,0.9)`;
@@ -1535,6 +1559,51 @@
     ctx.restore();
   }
 
+  // ---- landing cutscene ----
+  function startDocking() {
+    docking = { t: 0, dur: 1700 };
+    Sound.power();
+    const p = player;
+    for (let k = 0; k < 14; k++) {            // dust kicked up on touchdown
+      const ang = rand(0, Math.PI);
+      const sp = rand(1, 3) * DPR;
+      particles.push({
+        x: p.x + rand(-12, 12) * DPR, y: p.y + 10 * DPR,
+        vx: Math.cos(ang) * sp, vy: -Math.sin(ang) * sp * 0.6,
+        life: 0, max: rand(20, 40), r: rand(2, 4.5) * DPR,
+        hue: 38, sat: 12, flash: false,
+      });
+    }
+  }
+
+  function drawDocking() {
+    if (!docking) return;
+    const t = docking.t, d = docking.dur;
+    const k = Math.min(1, Math.min(t, d - t) / 320);   // ease the bars in then out
+    const barH = 84 * DPR * k;
+    ctx.save();
+    // gentle focus dim across the middle
+    ctx.fillStyle = `rgba(4,8,14,${0.4 * k})`;
+    ctx.fillRect(0, 0, W, H);
+    // letterbox bars
+    ctx.fillStyle = 'rgba(0,0,0,0.82)';
+    ctx.fillRect(0, 0, W, barH);
+    ctx.fillRect(0, H - barH, W, barH);
+    // titles
+    ctx.globalAlpha = k;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#8effc0';
+    ctx.font = `700 ${20 * DPR}px 'Trebuchet MS', sans-serif`;
+    ctx.fillText('⛽  DOCKING', W / 2, barH * 0.5);
+    ctx.fillStyle = 'rgba(150,255,200,0.7)';
+    ctx.font = `${11 * DPR}px 'Segoe UI', sans-serif`;
+    ctx.fillText('· STARBASE ·', W / 2, H - barH * 0.5);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
   // =====================  COLLISIONS  =====================
   function handleCollisions() {
     // player bolts vs ships (and the boss)
@@ -1671,24 +1740,41 @@
 
   // ---- base shop ----
   const SHOP = { repair: 20, bomb: 30, shield: 40, rapid: 40, triple: 30, twin: 50, spread: 70, plasma: 120 };
+  // buyable hulls — bigger = more durable (more hearts) but a larger target
+  const SHIPS = {
+    interceptor: { name: 'Interceptor', scale: 1.5, maxHp: 3,  hull: '#e8f6f3', cost: 0 },
+    vanguard:    { name: 'Vanguard',    scale: 1.95, maxHp: 6, hull: '#ffe6b0', cost: 180 },
+    juggernaut:  { name: 'Juggernaut',  scale: 2.5, maxHp: 10, hull: '#e6c2ff', cost: 420 },
+  };
   function buyShop(act) {
     const p = player;
     if (!p || state !== 'playing') return;
-    const cost = SHOP[act];
+    const ship = act.startsWith('ship:') ? SHIPS[act.slice(5)] : null;
+    const cost = ship ? ship.cost : SHOP[act];
     if (cost == null) return;
     if (p.credits < cost) { Sound.eshoot(); return; }          // can't afford → low blip
-    switch (act) {
-      case 'repair': if (p.hp >= 6) return; p.hp = Math.min(6, p.hp + 1); updateHearts(); break;
-      case 'bomb':   if (p.bombs >= 5) return; p.bombs++; break;
-      case 'shield': p.shieldT += 45000; break;
-      case 'rapid':  p.rapid += 45000; break;
-      case 'triple': p.triple += 30000; break;
-      case 'twin': case 'spread': case 'plasma': if (p.weapon === act) return; p.weapon = act; break;
-      default: return;
+    if (ship) {
+      if (p.shipClass === act.slice(5)) return;                // already flying it
+      p.shipClass = act.slice(5);
+      p.scale = ship.scale * DPR;
+      p.hull = ship.hull;
+      p.maxHp = ship.maxHp;
+      p.hp = ship.maxHp;                                       // new hull = full hull
+      updateHearts();
+    } else {
+      switch (act) {
+        case 'repair': if (p.hp >= p.maxHp) return; p.hp = Math.min(p.maxHp, p.hp + 1); updateHearts(); break;
+        case 'bomb':   if (p.bombs >= 5) return; p.bombs++; break;
+        case 'shield': p.shieldT += 45000; break;
+        case 'rapid':  p.rapid += 45000; break;
+        case 'triple': p.triple += 30000; break;
+        case 'twin': case 'spread': case 'plasma': if (p.weapon === act) return; p.weapon = act; break;
+        default: return;
+      }
     }
     p.credits -= cost;
     creditsValEl.textContent = p.credits;
-    (act === 'twin' || act === 'spread' || act === 'plasma' ? Sound.weapon : Sound.power)();
+    (ship || act === 'twin' || act === 'spread' || act === 'plasma' ? Sound.weapon : Sound.power)();
     updateBuffs();
     refreshShop();
   }
@@ -1696,7 +1782,12 @@
     if (!player) return;
     shopCreditsEl.textContent = player.credits;
     shopEl.querySelectorAll('.shop-item').forEach(b => {
-      b.classList.toggle('broke', player.credits < SHOP[b.dataset.act]);
+      const a = b.dataset.act;
+      const isShip = a.startsWith('ship:');
+      const cost = isShip ? SHIPS[a.slice(5)].cost : SHOP[a];
+      const owned = isShip && player.shipClass === a.slice(5);
+      b.classList.toggle('owned', owned);
+      b.classList.toggle('broke', !owned && player.credits < cost);
     });
   }
   shopEl.querySelectorAll('.shop-item').forEach(b => {
@@ -1709,9 +1800,10 @@
     state = 'playing';
     score = 0; elapsed = 0;
     bolts = []; ships = []; particles = []; enemyBolts = []; powerups = [];
-    boss = null; nextBossScore = 600; bossesBeaten = 0; nextHeavy = 14000;
+    boss = null; nextBossScore = 1200; bossesBeaten = 0; nextHeavy = 14000;
     nextLifeScore = 500;
     shocks = []; warpTrail = []; bombFlash = 0; scrollX = 0;
+    docking = null; wasLanded = false;
     bossBarEl.classList.remove('on');
     player = newPlayer();
     scoreValEl.textContent = '0';
@@ -1769,6 +1861,9 @@
       const prevScroll = scrollX;
       updatePlayer(dt);
       shiftWorld(scrollX - prevScroll);   // keep the world's contents anchored to the terrain
+      if (player.landed && !wasLanded && !docking) startDocking();   // touchdown → cutscene
+      wasLanded = player.landed;
+      if (docking) { docking.t += dt; if (docking.t >= docking.dur) docking = null; }
     }
 
     if (state === 'playing' && boss) updateBoss(dt);
@@ -1791,12 +1886,15 @@
     drawBases(now);
     drawParticles();
     drawReflection(now);
+    drawDocking();
 
-    if (state === 'playing' && player.landed) {
+    if (state === 'playing' && player.landed && !docking) {
       dockEl.classList.add('on'); shopEl.classList.add('on'); refreshShop();
     } else {
       dockEl.classList.remove('on'); shopEl.classList.remove('on');
     }
+    hudEl.classList.toggle('cine', !!docking);   // hide HUD during the cutscene
+    ctrlEl.classList.toggle('cine', !!docking);
 
     // bomb screen-flash sits on top of everything
     if (bombFlash > 0) {
@@ -1813,14 +1911,14 @@
       // difficulty ramp: spawns get faster the longer you survive (gentler now)
       const ramp = Math.min(elapsed / 90000, 1);   // 0→1 over 90s
       nextShip -= dt;
-      if (nextShip <= 0) { spawnShip(); nextShip = rand(3400 - 1400 * ramp, 6500 - 2500 * ramp); }
+      if (nextShip <= 0) { spawnShip(); nextShip = rand(2500 - 1000 * ramp, 4800 - 1800 * ramp); }
       nextFormation -= dt;
-      if (nextFormation <= 0) { spawnFormation(); nextFormation = rand(13000 - 4000 * ramp, 22000 - 7000 * ramp); }
+      if (nextFormation <= 0) { spawnFormation(); nextFormation = rand(10000 - 3500 * ramp, 17000 - 6000 * ramp); }
       nextPowerup -= dt;
-      if (nextPowerup <= 0) { spawnPowerup(); nextPowerup = rand(7000, 11000); }
+      if (nextPowerup <= 0) { spawnPowerup(); nextPowerup = rand(6000, 10000); }
       if (!boss) {
         nextHeavy -= dt;
-        if (nextHeavy <= 0) { spawnShip({ heavy: true }); nextHeavy = rand(16000 - 5000 * ramp, 24000 - 8000 * ramp); }
+        if (nextHeavy <= 0) { spawnShip({ heavy: true }); nextHeavy = rand(12000 - 4000 * ramp, 19000 - 7000 * ramp); }
         if (score >= nextBossScore) spawnBoss();
       }
     } else {
