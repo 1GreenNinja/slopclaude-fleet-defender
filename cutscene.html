@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SLOPCLAUDE — Approach</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #020306; overflow: hidden; }
+  #r { width: 100vw; height: 100vh; display: block; touch-action: none; }
+  .bar { position: fixed; left: 0; right: 0; height: 9vh; background: #000; z-index: 5; }
+  .bar.top { top: 0; } .bar.bot { bottom: 0; }
+  #title {
+    position: fixed; left: 0; right: 0; top: 12vh; text-align: center; z-index: 6;
+    font-family: 'Trebuchet MS','Segoe UI',sans-serif; color: #8effc0; letter-spacing: 0.4em;
+    text-shadow: 0 0 18px rgba(47,211,198,0.7); opacity: 0; transition: opacity 1s;
+  }
+  #title .big { font-size: clamp(20px,3vw,38px); font-weight: 700; }
+  #title .sub { font-size: clamp(11px,1.4vw,15px); letter-spacing: 0.5em; color: rgba(170,230,255,0.7); margin-top: 8px; }
+  #hint { position: fixed; bottom: 11vh; right: 18px; z-index: 6; color: rgba(200,230,255,0.4);
+    font-family: 'Segoe UI',sans-serif; font-size: 12px; letter-spacing: 0.12em; }
+</style>
+</head>
+<body>
+  <canvas id="r"></canvas>
+  <div class="bar top"></div>
+  <div class="bar bot"></div>
+  <div id="title"><div class="big">APPROACHING STARBASE</div><div class="sub">DOCKING SEQUENCE</div></div>
+  <div id="hint">click to replay</div>
+
+<script src="vendor/babylon.js"></script>
+<script src="vendor/babylonjs.loaders.min.js"></script>
+<script>
+const canvas = document.getElementById('r');
+const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+const scene = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color4(0.01, 0.02, 0.05, 1);
+
+const camera = new BABYLON.UniversalCamera('cam', new BABYLON.Vector3(0, 0, -40), scene);
+camera.fov = 0.9;
+camera.minZ = 0.1; camera.maxZ = 4000;
+
+// ---- lighting ----
+const hemi = new BABYLON.HemisphericLight('h', new BABYLON.Vector3(0.2, 1, 0.3), scene);
+hemi.intensity = 0.45; hemi.groundColor = new BABYLON.Color3(0.05, 0.06, 0.12);
+const key = new BABYLON.DirectionalLight('k', new BABYLON.Vector3(-0.6, -0.5, 0.6), scene);
+key.intensity = 2.2; key.diffuse = new BABYLON.Color3(1, 0.85, 0.7);
+const rim = new BABYLON.DirectionalLight('rl', new BABYLON.Vector3(0.7, 0.3, -0.6), scene);
+rim.intensity = 1.1; rim.diffuse = new BABYLON.Color3(0.5, 0.7, 1);
+const glow = new BABYLON.GlowLayer('glow', scene); glow.intensity = 0.9;
+
+// ---- starfield ----
+const pcs = new BABYLON.PointsCloudSystem('stars', 2, scene);
+pcs.addPoints(1200, (p) => {
+  const r = 800 + Math.random() * 1200;
+  const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+  p.position = new BABYLON.Vector3(r * Math.sin(ph) * Math.cos(th), r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph));
+  const w = 0.6 + Math.random() * 0.4;
+  p.color = new BABYLON.Color4(w, w, Math.min(1, w + 0.1), 1);
+});
+pcs.buildMeshAsync();
+
+// nebula backdrop
+const neb = BABYLON.MeshBuilder.CreateSphere('neb', { diameter: 3500, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+const nm = new BABYLON.StandardMaterial('nm', scene);
+nm.disableLighting = true;
+nm.emissiveColor = new BABYLON.Color3(0.02, 0.03, 0.07);
+neb.material = nm;
+
+// ---- helpers ----
+function frame(root, target) {
+  const { min, max } = root.getHierarchyBoundingVectors();
+  const size = max.subtract(min);
+  const c = min.add(max).scale(0.5);
+  const longest = Math.max(size.x, size.y, size.z) || 1;
+  const s = target / longest;
+  root.scaling.scaleInPlace(s);
+  root.position.subtractInPlace(c.scale(s));
+  return s;
+}
+function metalize(meshes, color, metallic) {
+  for (const m of meshes) {
+    if (!m.material) continue;
+    if (m.material instanceof BABYLON.PBRMaterial) {
+      m.material.metallic = metallic != null ? metallic : 0.7;
+      m.material.roughness = 0.42;
+    }
+  }
+}
+
+let ship = null, base = null, engGlow = null;
+const lerp = (a, b, t) => a + (b - a) * t;
+const v3lerp = (a, b, t) => new BABYLON.Vector3(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t));
+const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+async function load() {
+  // base station (optional — continues if missing)
+  try {
+    const b = await BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'base.glb', scene);
+    base = new BABYLON.TransformNode('baseRoot', scene);
+    b.meshes.filter(m => m.parent === null).forEach(m => m.parent = base);
+    frame(base, 70);
+    base.position.addInPlace(new BABYLON.Vector3(18, -6, 30));
+    metalize(b.meshes, null, 0.8);
+  } catch (e) { console.warn('no base.glb', e); }
+
+  // player ship
+  try {
+    const s = await BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'interceptor_tex.glb', scene);
+    ship = new BABYLON.TransformNode('shipRoot', scene);
+    s.meshes.filter(m => m.parent === null).forEach(m => m.parent = ship);
+    frame(ship, 9);
+    metalize(s.meshes, null, 0.55);
+    // small engine glow trailing the ship (world-space, fixed size — not parented to the scaled root)
+    engGlow = BABYLON.MeshBuilder.CreateSphere('eng', { diameter: 1.6 }, scene);
+    const em = new BABYLON.StandardMaterial('em', scene); em.disableLighting = true;
+    em.emissiveColor = new BABYLON.Color3(0.35, 0.95, 1.0); em.alpha = 0.85;
+    engGlow.material = em; engGlow.scaling = new BABYLON.Vector3(1, 0.45, 1.8);
+  } catch (e) { console.warn('no ship', e); }
+
+  runCinematic();
+}
+
+// ---- cinematic timeline (loops) ----
+const DUR = 13;            // seconds
+const camKeys = [
+  { t: 0.0,  pos: [-60, 26, -90], tgt: [10, 0, 20] },
+  { t: 0.4,  pos: [-20, 8, -30],  tgt: [12, -2, 22] },
+  { t: 0.72, pos: [14, 4, -10],   tgt: [18, -4, 28] },
+  { t: 1.0,  pos: [26, 10, 2],    tgt: [18, -5, 30] },
+];
+const shipKeys = [
+  { t: 0.0,  pos: [-50, 14, -70], rotY: 0.5 },
+  { t: 0.55, pos: [4, -1, 6],     rotY: 0.2 },
+  { t: 1.0,  pos: [15, -4, 26],   rotY: -0.1 },
+];
+function sample(keys, p) {
+  let a = keys[0], b = keys[keys.length - 1];
+  for (let i = 0; i < keys.length - 1; i++) { if (p >= keys[i].t && p <= keys[i + 1].t) { a = keys[i]; b = keys[i + 1]; break; } }
+  const span = (b.t - a.t) || 1; const lt = ease(Math.min(1, Math.max(0, (p - a.t) / span)));
+  return { a, b, lt };
+}
+let t0 = performance.now();
+function runCinematic() { t0 = performance.now(); document.getElementById('title').style.opacity = 1;
+  setTimeout(() => { document.getElementById('title').style.opacity = 0; }, 5000); }
+
+scene.onBeforeRenderObservable.add(() => {
+  const p = (((performance.now() - t0) / 1000) % DUR) / DUR;
+  const ck = sample(camKeys, p);
+  const cp = v3lerp(new BABYLON.Vector3(...ck.a.pos), new BABYLON.Vector3(...ck.b.pos), ck.lt);
+  const ct = v3lerp(new BABYLON.Vector3(...ck.a.tgt), new BABYLON.Vector3(...ck.b.tgt), ck.lt);
+  camera.position.copyFrom(cp); camera.setTarget(ct);
+  if (ship) {
+    const sk = sample(shipKeys, p);
+    ship.position.copyFrom(v3lerp(new BABYLON.Vector3(...sk.a.pos), new BABYLON.Vector3(...sk.b.pos), sk.lt));
+    ship.rotation.y = lerp(sk.a.rotY, sk.b.rotY, sk.lt) + Math.PI;
+    if (engGlow) engGlow.position.set(ship.position.x - 2.4, ship.position.y - 0.3, ship.position.z - 2.4);
+  }
+  if (base) base.rotation.y += 0.0009;
+});
+
+canvas.addEventListener('click', runCinematic);
+load();
+engine.runRenderLoop(() => scene.render());
+addEventListener('resize', () => engine.resize());
+</script>
+</body>
+</html>

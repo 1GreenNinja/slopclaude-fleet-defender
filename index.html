@@ -134,6 +134,13 @@
     box-shadow: 0 0 24px rgba(47,211,198,0.35); animation: pulse 1.6s ease-in-out infinite;
   }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 24px rgba(47,211,198,0.30); } 50% { box-shadow: 0 0 38px rgba(47,211,198,0.65); } }
+  .screen .cta3d {
+    margin-top: 16px; pointer-events: auto; cursor: pointer; text-decoration: none;
+    font-family: 'Trebuchet MS','Segoe UI',sans-serif; font-size: clamp(12px,1.4vw,15px);
+    letter-spacing: 0.22em; text-transform: uppercase; color: #8effc0;
+    border: 1px solid rgba(142,255,192,0.5); border-radius: 30px; padding: 8px 22px;
+  }
+  .screen .cta3d:hover { background: rgba(142,255,192,0.12); }
   .screen .final { margin-top: 18px; font-size: clamp(18px, 2.4vw, 30px); color: var(--accent); letter-spacing: 0.1em; }
 
   .credit {
@@ -196,6 +203,7 @@
       <div><b>AVOID</b> Mountains & enemy fire — they shoot back 💥</div>
     </div>
     <div class="cta">Click to Launch</div>
+    <a class="cta3d" href="cutscene.html" target="_blank">▶ Watch the 3D Approach</a>
   </div>
 
   <div id="gameOver" class="screen hidden">
@@ -2202,6 +2210,7 @@
   addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
   addEventListener('mousemove', e => { mouse.x = e.clientX * DPR; mouse.y = e.clientY * DPR; mouse.active = true; });
   addEventListener('mousedown', e => {
+    if (e.target && e.target.closest && e.target.closest('a')) return;   // links (e.g. 3D cutscene) act normally
     if (e.target && shopEl.contains(e.target)) return;   // clicking the shop shouldn't fire/restart
     if (e.button === 0) {
       mouse.down = true;
